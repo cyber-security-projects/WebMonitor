@@ -4,7 +4,7 @@ from os import getenv
 import re
 import bcrypt
 
-class RegularUsers:
+class Users:
     def __init__(self):
         load_dotenv()
         username = getenv("MONGO_USER")
@@ -12,13 +12,15 @@ class RegularUsers:
         cluster = getenv("MONGO_CLUSTER")
         mongo_atlas = getenv("MONGO_ATLAS", "false").lower() == "true"
         self._mongo = MongoHandler(username, password, cluster, mongo_atlas)
-        self._mongo.set_database("users")
-        self._mongo.set_collection("users")
         self._mongo.connect()
 
+class RegularUsers(Users):
+    def __init__(self):
+        super().__init__()
+        self._mongo.set_database("users")
+        self._mongo.set_collection("regular_users")
+
     def create_user(self, username: str,  email: str, password: str):
-        if self.__class__.__name__ != "RegularUsers":
-            raise NotImplementedError("Este método não pode ser implementado por outras classes")
         pattern = r"^([a-z\d\.-]+)@([a-z\d-]+)\.([a-z]{2,8})(\.[a-z]{2,8})?$"
         if re.match(pattern, email) is None:
             raise ValueError("E-mail inválido!")
@@ -64,20 +66,39 @@ class RegularUsers:
     def verify_password(password: str, hashed_password: str) -> bool:
         return bcrypt.checkpw(password.encode("utf-8"), hashed_password.encode("utf-8"))
 
-class FakeUsers(RegularUsers):
+class FakeUsers(Users):
     def __init__(self):
         super().__init__()
-        self._mongo.set_collection("fake_identities")
+        self._mongo.set_database("users")
+        self._mongo.set_collection("fake_users")
 
-    def create_fake_user(self, main_user: str, platform: str, username: str, email: str, password: str):
+    def create_user(self, main_user:str, username: str,  email: str, password: str):
+        result = self._mongo.aggregate([
+            {
+                "$lookup": {
+                    "from": "regular_users",
+                    "localField": "username",
+                    "foreignField": "username",
+                    "as": "match"
+                }
+            },
+            {
+                "$match": { "match": { "$ne": [] } }
+            }
+        ])
+        print(result)
+        pattern = r"^([a-z\d\.-]+)@([a-z\d-]+)\.([a-z]{2,8})(\.[a-z]{2,8})?$"
+        if re.match(pattern, email) is None:
+            raise ValueError("E-mail inválido!")
+        pattern = r"^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[a-zA-Z]).{8,}$"
+        if re.match(pattern, password) is None:
+            raise ValueError("Senha muito fraca!")
+        if self._mongo.find_one({"username": username}):
+            raise ValueError("Usuário já existe!")
         password = RegularUsers.hash_password(password)
-        fake_identity = {
-            "main_user": main_user,  # Relaciona ao usuário principal
+        user = {
             "username": username,
             "email": email,
             "password": password
         }
-        self._mongo.insert_one(fake_identity)
-        return {"message": "Identidade falsa criada com sucesso!"}
-
-FakeUsers().create_user("fadsf", "daf", "fasdf")
+        self._mongo.insert_one(user)
