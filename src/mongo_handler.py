@@ -1,23 +1,12 @@
 from pymongo import MongoClient
-from pymongo.errors import OperationFailure
+from pymongo.errors import OperationFailure, PyMongoError
 from pymongo.server_api import ServerApi
 import re
 
-from pymongo.synchronous.database import Database
-
-
-# Parâmetros que são recebidos:
-# * Username
-# * Password
-# * Cluster
-# * Database Name
-# * Mongo Atlas
-
 class MongoHandler:
-    URI: str
+    URI = None
     def __init__(self, username:str=None, password:str=None, cluster:str=None, mongo_atlas:bool=False, database:str=None, collection:str=None):
         self.__client = MongoClient()
-        self.__database = Database
         self.__username = None
         self.__password = None
         self.__cluster = None
@@ -90,14 +79,117 @@ class MongoHandler:
     def disconnect(self):
         if self.__client:
             self.__client.close()
-            self.__client = None
+            self.URI = None
 
     def insert_one(self, value:dict):
+        if self.URI is None:
+            raise ConnectionError("Não há conexão ativa")
         if None in [self.__database, self.__collection]:
             raise ValueError("Não foi definido banco ou coleção para inserção!")
-        database = self.__client.get_database(self.__database)[self.__collection]
-        database.insert_one(value)
+        try:
+            self.__client.get_database(self.__database)[self.__collection].insert_one(value)
+        except PyMongoError as e:
+            raise RuntimeError(f"Erro ao inserir documento: {str(e)}")
 
+    def find_one(self, query: dict) -> dict:
+        if self.URI is None:
+            raise ConnectionError("Não há conexão ativa")
+        if None in [self.__database, self.__collection]:
+            raise ValueError("Não foi definido banco ou coleção para procura!")
+        try:
+            result = self.__client.get_database(self.__database)[self.__collection].find_one(query)
+            return result
+        except PyMongoError as e:
+            raise RuntimeError(f"Erro ao encontrar documento: {str(e)}")
+
+    def update_one(self, query: dict, update: dict):
+        if self.URI is None:
+            raise ConnectionError("Não há conexão ativa")
+        if None in [self.__database, self.__collection]:
+            raise ValueError("Não foi definido banco ou coleção para atualização!")
+        if not any(key.startswith("$") for key in update.keys()):
+            raise ValueError("O dicionário de atualização deve conter pelo menos um operador `$`, tente usar {$set: {update}}!")
+        try:
+            result = self.__client[self.__database][self.__collection].update_one(query, update)
+            if result.matched_count == 0:
+                return {"message": "Nenhum documento encontrado para atualizar.", "modified": 0}
+            return {"message": "Documento atualizado com sucesso!", "modified": result.modified_count}
+        except PyMongoError as e:
+            raise RuntimeError(f"Erro ao atualizar documento: {str(e)}")
+
+    def delete_one(self, query: dict):
+        if self.URI is None:
+            raise ConnectionError("Não há conexão ativa")
+        if None in [self.__database, self.__collection]:
+            raise ValueError("Não foi definido banco ou coleção para remoção!")
+        try:
+            result = self.__client[self.__database][self.__collection].delete_one(query)
+            if result.deleted_count == 0:
+                return {"message": "Nenhum documento encontrado para deletar", "deleted": 0}
+            return {"message": "Documento deletado com sucesso!", "deleted": result.deleted_count}
+        except PyMongoError as e:
+            raise RuntimeError(f"Erro ao deletar documento: {str(e)}")
+
+    def insert_many(self, documents: list):
+        if self.URI is None:
+            raise ConnectionError("Não há conexão ativa")
+        if None in [self.__database, self.__collection]:
+            raise ValueError("Não foi definido banco ou coleção para inserção!")
+        if not isinstance(documents, list) or not all(isinstance(doc, dict) for doc in documents):
+            raise ValueError("Os documentos devem ser fornecidos em uma lista de dicionários")
+        try:
+            result = self.__client[self.__database][self.__collection].insert_many(documents)
+            return {"message": "Documentos inseridos com sucesso!", "inserted": len(result.inserted_ids)}
+        except PyMongoError as e:
+            raise RuntimeError(f"Erro ao inserir documentos: {str(e)}")
+
+    def find_many(self, query: dict, limit: int = 0):
+        if self.URI is None:
+            raise ConnectionError("Não há conexão ativa")
+        if None in [self.__database, self.__collection]:
+            raise ValueError("Não foi definido banco ou coleção para procura!")
+        try:
+            results = self.__client[self.__database][self.__collection].find(query).limit(limit)
+            return list(results)
+        except PyMongoError as e:
+            raise RuntimeError(f"Erro ao buscar documentos: {str(e)}")
+
+    def update_many(self, query: dict, update: dict):
+        if self.URI is None:
+            raise ConnectionError("Não há conexão ativa")
+        if None in [self.__database, self.__collection]:
+            raise ValueError("Não foi definido banco ou coleção para atualização!")
+        if not any(key.startswith("$") for key in update.keys()):
+            raise ValueError("O dicionário de atualização deve conter pelo menos um operador `$`, tente usar {$set: {update}}!")
+        try:
+            result = self.__client[self.__database][self.__collection].update_many(query, update)
+            return {"message": "Documentos atualizados com sucesso!", "modified": result.modified_count}
+        except PyMongoError as e:
+            raise RuntimeError(f"Erro ao atualizar documentos: {str(e)}")
+
+    def delete_many(self, query: dict):
+        if self.URI is None:
+            raise ConnectionError("Não há conexão ativa")
+        if None in [self.__database, self.__collection]:
+            raise ValueError("Não foi definido banco ou coleção para atualização!")
+        try:
+            result = self.__client[self.__database][self.__collection].delete_many(query)
+            return {"message": "Documentos deletados com sucesso!", "deleted": result.deleted_count}
+        except PyMongoError as e:
+            raise RuntimeError(f"Erro ao deletar documentos: {str(e)}")
+
+    def aggregate(self, pipeline: list):
+        if self.URI is None:
+            raise ConnectionError("Não há conexão ativa")
+        if None in [self.__database, self.__collection]:
+            raise ValueError("Não foi definido banco ou coleção para agragação!")
+        if not isinstance(pipeline, list):
+            raise ValueError("O pipeline de agregação deve ser uma lista de estágios")
+        try:
+            results = self.__client[self.__database][self.__collection].aggregate(pipeline)
+            return list(results)
+        except PyMongoError as e:
+            raise RuntimeError(f"Erro ao executar agregação: {str(e)}")
 
     @staticmethod
     def is_valid_username(username: str) -> bool:
