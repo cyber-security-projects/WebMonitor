@@ -12,7 +12,7 @@ class MongoHandler:
         self.__cluster = None
         self.__database = None
         self.__collection = None
-        self.mongo_atlas = mongo_atlas
+        self.__mongo_atlas = mongo_atlas
         validations = {
             "username": (username, MongoHandler.is_valid_username, "Username inválido!"),
             "password": (password, MongoHandler.is_valid_password, "Senha inválida!"),
@@ -46,6 +46,12 @@ class MongoHandler:
 
     def get_cluster(self) -> str:
         return self.__cluster
+    
+    def set_atlas(self, atlas:bool):
+        self.__mongo_atlas = atlas
+
+    def is_atlas(self) -> bool:
+        return self.__mongo_atlas
 
     def set_database(self, database:str):
         if MongoHandler.is_valid_database(database):
@@ -64,7 +70,7 @@ class MongoHandler:
     def connect(self):
         if None in [self.__username, self.__password, self.__cluster]:
             raise ConnectionError("Não é possível iniciar conexão com o banco pois algum parâmetro essencial não foi passado!")
-        self.URI = "mongodb+srv://" if self.mongo_atlas else "mongodb://"
+        self.URI = "mongodb+srv://" if self.__mongo_atlas else "mongodb://"
         self.URI += f"{self.__username}:{self.__password}@{self.__cluster}/?retryWrites=true&w=majority&appName=WebMonitor"
         try:
             self.__client = MongoClient(self.URI, serverSelectionTimeoutMS=5000)
