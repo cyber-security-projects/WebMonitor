@@ -92,8 +92,16 @@ class MongoHandler:
             raise ConnectionError("Não há conexão ativa")
         if None in [self.__database, self.__collection]:
             raise ValueError("Não foi definido banco ou coleção para inserção!")
+        if value == {}:
+            raise ValueError("Nenhum valor para ser adicionado!")
         try:
-            self.__client.get_database(self.__database)[self.__collection].insert_one(value)
+            result = self.__client.get_database(self.__database)[self.__collection].insert_one(value)
+            response = {
+                "_id": result.inserted_id
+            }
+            for key in value.keys():
+                response[key] = value[key]
+            return {"message": "Documento inserido com sucesso!", "value": response}
         except PyMongoError as e:
             raise RuntimeError(f"Erro ao inserir documento: {str(e)}")
 
@@ -104,7 +112,7 @@ class MongoHandler:
             raise ValueError("Não foi definido banco ou coleção para procura!")
         try:
             result = self.__client.get_database(self.__database)[self.__collection].find_one(query)
-            return result
+            return result if result is not None else {}
         except PyMongoError as e:
             raise RuntimeError(f"Erro ao encontrar documento: {str(e)}")
 
@@ -143,6 +151,8 @@ class MongoHandler:
             raise ValueError("Não foi definido banco ou coleção para inserção!")
         if not isinstance(documents, list) or not all(isinstance(doc, dict) for doc in documents):
             raise ValueError("Os documentos devem ser fornecidos em uma lista de dicionários")
+        if documents == [] or {} in documents:
+            raise ValueError("A lista ou algum valor da lista está vazio")
         try:
             result = self.__client[self.__database][self.__collection].insert_many(documents)
             return {"message": "Documentos inseridos com sucesso!", "inserted": len(result.inserted_ids)}
@@ -167,6 +177,8 @@ class MongoHandler:
             raise ValueError("Não foi definido banco ou coleção para atualização!")
         if not any(key.startswith("$") for key in update.keys()):
             raise ValueError("O dicionário de atualização deve conter pelo menos um operador `$`, tente usar {$set: {update}}!")
+        if update == [] or {} in update:
+            raise ValueError("A lista ou algum valor da lista está vazio")
         try:
             result = self.__client[self.__database][self.__collection].update_many(query, update)
             return {"message": "Documentos atualizados com sucesso!", "modified": result.modified_count}
